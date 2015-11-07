@@ -1,5 +1,6 @@
 import java.io.*;
 import java.net.*;
+import java.util.ArrayList;
 import java.util.Date;
 
 public class WebATMServer {
@@ -41,6 +42,22 @@ public class WebATMServer {
 
 class HandleAClient implements Runnable {
 	private Socket socket; // A connected socket
+	private BufferedReader inputFromFile = null;
+	private PrintWriter outputToFile = null;
+	private BufferedReader inputFromClient = null;
+	private PrintWriter outputToClient = null;
+	private FileReader in = null;
+	private FileWriter out = null;
+	
+	private String id, pwd;
+	private String _id, _pwd;
+	private int cash;
+	private String cashStr;
+	
+	private String choice;
+	
+	private ArrayList<String> accountHistory1 = new ArrayList<>();
+	private ArrayList<String> accountHistory2 = new ArrayList<>();
 
     /** Construct a thread */
     public HandleAClient(Socket socket) {
@@ -49,16 +66,9 @@ class HandleAClient implements Runnable {
 
     /** Run a thread */
     public void run() {
-    	BufferedReader inputFromFile = null;
-    	PrintWriter outputToFile = null;
-        BufferedReader inputFromClient = null;
-        PrintWriter outputToClient = null;
-        FileReader in = null;
-        FileWriter out = null;
-        
         try{
 	        in = new FileReader("account.txt");
-	        //out = new FileWriter("account.txt");
+//	        out = new FileWriter("account.txt");
         }
         catch(IOException ex){
         	ex.printStackTrace();
@@ -70,38 +80,195 @@ class HandleAClient implements Runnable {
 			outputToClient = new PrintWriter(new BufferedWriter (
 					new OutputStreamWriter(socket.getOutputStream())),true);
 			inputFromFile = new BufferedReader(in);
-			//outputToFile = new PrintWriter(out);
+//			outputToFile = new PrintWriter(out);
 	
 			// Continuously serve the client
 			boolean founded = false;
 			while (!founded) {
-			  String id = inputFromClient.readLine();
-			  String pwd = inputFromClient.readLine();
-			  String _id, _pwd;
+			  id = inputFromClient.readLine();
+			  pwd = inputFromClient.readLine();
 			  
 			  while(inputFromFile.ready()){
 				  _id = inputFromFile.readLine();
-				  _pwd = inputFromFile.readLine();
 				  
-				  if((_id.equals(id)) && (_pwd.equals(pwd))){
-					  outputToClient.println("1");
-					  System.out.println("Success!");
-					  founded = true;
-					  break;
+				  if(_id.equals(id)){
+					  _pwd = inputFromFile.readLine();
+					  if(_pwd.equals(pwd)){
+						  cash = Integer.parseInt(inputFromFile.readLine());
+						  outputToClient.println(String.valueOf(cash));
+						  System.out.println("Success!");
+						  
+						  addHistory(id ,String.valueOf(cash));
+						  
+						  founded = true;
+						  break;
+					  }
 				  }
 			  }
 			  
 			  if(!founded){
-				  outputToClient.println("0");
+				  outputToClient.println("-1");
 				  System.out.println("Wrong id or pwd!");
 			  }
-			  
-		    }
+		    }	// end while(!founded)
 		}
 		catch(IOException ex) {
 			ex.printStackTrace();
 		}
 		
+		int newCash = cash;
+		String amount, targetBankNo, isInternal;
+		
+		while(true){
+			try{
+				choice = inputFromClient.readLine();
+				if(choice.equals("deposit")){
+					amount = inputFromClient.readLine();
+					newCash = newCash + Integer.valueOf(amount);
+					
+					if(changeNowCash(newCash))
+						outputToClient.println(String.valueOf(newCash));
+					else
+						outputToClient.println("-1");
+				}
+				else if(choice.equals("withdraw")){
+					amount = inputFromClient.readLine();
+					newCash = newCash - Integer.valueOf(amount);
+					
+					if(changeNowCash(newCash))
+						outputToClient.println(String.valueOf(newCash));
+					else
+						outputToClient.println("-1");
+				}
+				else if(choice.equals("transfer")){
+					amount = inputFromClient.readLine();
+					targetBankNo  = inputFromClient.readLine();
+					isInternal = inputFromClient.readLine();
+					
+					newCash = newCash - Integer.valueOf(amount);
+					
+					
+					if(isInternal.equals("true") ? 
+							changeNowCash(newCash) : changeNowCash(newCash - 15)){
+						if(transfer(targetBankNo, amount))
+							outputToClient.println(isInternal.equals("true") ? 
+									String.valueOf(newCash) : String.valueOf(newCash - 15));
+						else
+							outputToClient.println("-1");
+					}
+					else
+						outputToClient.println("-1");
+					
+				}
+				else if(choice.equals("view_history")){
+					if(id.equals("coldmanck@gmail.com")){
+						outputToClient.println(accountHistory1.size());
+//						outputToClient.print(accountHistory1);
+					}
+					else if(id.equals("coldman519@yahoo.com.tw")){
+						outputToClient.println(accountHistory2.size());
+//						outputToClient.print(accountHistory2);
+					}
+				}
+				else if(choice.equals("log_out")){
+					break;
+				}
+			
+			}
+			catch(IOException ex){
+				ex.printStackTrace();
+			}
+			
+			// Update now cash
+			cash = newCash;
+		}
+		
+		outputToClient.println("log_out_success");
+		System.out.println("Log out!");
 		
 	}
+    
+    public boolean changeNowCash(int newCash){
+    	boolean status = false;
+    	
+    	try{
+    		in = new FileReader("account.txt");
+	        inputFromFile = new BufferedReader(in);
+    		
+    		String totalStr = "";
+	        while(inputFromFile.ready()) {
+	            totalStr += inputFromFile.readLine();
+	            totalStr += "\n";
+	        }
+	        totalStr = totalStr.replace(String.valueOf(cash), String.valueOf(newCash));
+	        
+	        in.close();
+	        
+	        // Change amount
+	        out = new FileWriter("account.txt");
+	        outputToFile = new PrintWriter(out);
+	        outputToFile.print(totalStr);
+	        out.close();
+	        
+	        status = true;
+    	}
+    	catch(IOException ex){
+    		ex.printStackTrace();
+    	}
+    	
+    	if(status){
+			System.out.println("Now cash: " + newCash + " true");
+			return true;
+    	}
+		else{
+			System.out.println("Now cash: " + newCash + " false");
+			return false;
+		}
+    }
+    
+    public boolean transfer(String targetBankNo, String amount){
+    	boolean status = false;
+    	int newCash = 0;
+    	
+    	try{
+	    	in = new FileReader("account.txt");
+	        inputFromFile = new BufferedReader(in);
+	    	
+	    	boolean founded = false;
+			
+		    while(inputFromFile.ready()){
+			    _id = inputFromFile.readLine();
+			  
+			    if(_id.equals(targetBankNo)){
+			    	founded = true;
+				    inputFromFile.readLine();	// empty
+		
+				    // Temporaily cash = target bank's cash 
+				    cash = Integer.parseInt(inputFromFile.readLine());
+				    newCash = cash + Integer.valueOf(amount);
+				    
+				    break;
+		        }
+		    }
+		    in.close();
+		    
+		    if(founded)
+			    if(changeNowCash(newCash))
+			    	status = true;
+		    else
+				 System.out.println("Wrong bank number!");
+		}	// end try
+    	catch(IOException ex){
+    		ex.printStackTrace();
+    	}
+    	
+    	return status;
+    }
+    
+    public void addHistory(String id, String cash){
+    	if(id == "coldmanck@gmail.com")
+    		accountHistory1.add(String.valueOf(cash));
+		else if(id == "coldman519@yahoo.com.tw")
+			accountHistory2.add(String.valueOf(cash));
+    }
 }
