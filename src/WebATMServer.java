@@ -1,7 +1,9 @@
 import java.io.*;
 import java.net.*;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.List;
 
 public class WebATMServer {
 
@@ -52,13 +54,17 @@ class HandleAClient implements Runnable {
 	private String id, pwd;
 	private String _id, _pwd;
 	private int cash;
-	private String cashStr;
+//	private String cashStr;
 	
 	private String choice;
 	
 	private ArrayList<String> accountHistory1 = new ArrayList<>();
 	private ArrayList<String> accountHistory2 = new ArrayList<>();
-
+	
+	private String[] unableAccounts;
+	private ArrayList<String> unableAccountsAL = new ArrayList<>();
+	private static int loginFailTimes = 0;
+	
     /** Construct a thread */
     public HandleAClient(Socket socket) {
       this.socket = socket;
@@ -81,35 +87,68 @@ class HandleAClient implements Runnable {
 					new OutputStreamWriter(socket.getOutputStream())),true);
 			inputFromFile = new BufferedReader(in);
 //			outputToFile = new PrintWriter(out);
+			
+			// retrieve unable accounts
+			unableAccounts = inputFromFile.readLine().split(":");
+			unableAccountsAL.addAll(Arrays.asList(unableAccounts));
 	
 			// Continuously serve the client
 			boolean founded = false;
+			boolean containsID = false;
+			
 			while (!founded) {
-			  id = inputFromClient.readLine();
-			  pwd = inputFromClient.readLine();
-			  
-			  while(inputFromFile.ready()){
-				  _id = inputFromFile.readLine();
+				id = inputFromClient.readLine();
+				pwd = inputFromClient.readLine();
+  
+				// Scan the database
+				while(inputFromFile.ready()){
+					_id = inputFromFile.readLine();
+					// Check if id is an unable account
+				    if(unableAccountsAL.contains(_id))
+					    break;
 				  
-				  if(_id.equals(id)){
-					  _pwd = inputFromFile.readLine();
-					  if(_pwd.equals(pwd)){
-						  cash = Integer.parseInt(inputFromFile.readLine());
-						  outputToClient.println(String.valueOf(cash));
-						  System.out.println("Success!");
+				    if(_id.equals(id)){
+				    	containsID = true;
+					    _pwd = inputFromFile.readLine();
+					    if(_pwd.equals(pwd)){
+						    cash = Integer.parseInt(inputFromFile.readLine());
+						    outputToClient.println(String.valueOf(cash));
+						    System.out.println("Success!");
+						    addHistory(id ,String.valueOf(cash));
 						  
-						  addHistory(id ,String.valueOf(cash));
-						  
-						  founded = true;
-						  break;
-					  }
-				  }
-			  }
-			  
-			  if(!founded){
-				  outputToClient.println("-1");
-				  System.out.println("Wrong id or pwd!");
-			  }
+						    founded = true;
+						    break;
+					    } 
+				    }
+			    }
+				
+				// if not found
+				if(!founded){
+					if(containsID){
+						outputToClient.println("-1");
+						System.out.println("Wrong pwd or unable accounts!");
+					  
+						if(++loginFailTimes == 3){
+							unableAccountsAL.add(id);
+							unableAccounts = unableAccountsAL.toArray(
+									new String[unableAccountsAL.size()]);
+							updateUnableAccounts();
+							loginFailTimes = 0;
+							System.out.println("Fail over 3 times! Lock.");
+						}
+					}
+					else{
+						createNewAccount(id, pwd);
+						
+						cash = 0;
+						outputToClient.println(String.valueOf(cash));
+						addHistory(id, String.valueOf(cash));
+						
+						System.out.println("Create new account!");
+						founded = true;
+						break;
+					}
+				}	// end if(!founded)
 		    }	// end while(!founded)
 		}
 		catch(IOException ex) {
@@ -270,5 +309,62 @@ class HandleAClient implements Runnable {
     		accountHistory1.add(String.valueOf(cash));
 		else if(id == "coldman519@yahoo.com.tw")
 			accountHistory2.add(String.valueOf(cash));
+    }
+    
+    public void updateUnableAccounts(){
+    	try{
+    		in = new FileReader("account.txt");
+	        inputFromFile = new BufferedReader(in);
+	        
+	        String totalStr = "";
+	        // Replace the first record
+	        for(int i = 0; i < unableAccounts.length; i++){
+	        	totalStr += unableAccounts[i];
+	        	if(i != unableAccounts.length - 1)
+	        		totalStr += ":";
+	        }
+	        totalStr += "\n";
+	        
+	        inputFromFile.readLine();
+	        while(inputFromFile.ready()) {
+	            totalStr += inputFromFile.readLine();
+	            totalStr += "\n";
+	        }
+	        in.close();
+	        
+	        // Change amount
+	        out = new FileWriter("account.txt");
+	        outputToFile = new PrintWriter(out);
+	        outputToFile.print(totalStr);
+	        out.close();
+    	}
+    	catch(IOException ex){
+    		ex.printStackTrace();
+    	}
+    }
+    
+    public void createNewAccount(String id, String pwd){
+    	try{
+    		in = new FileReader("account.txt");
+	        inputFromFile = new BufferedReader(in);
+    		
+    		String totalStr = "";
+	        while(inputFromFile.ready()) {
+	            totalStr += inputFromFile.readLine();
+	            totalStr += "\n";
+	        }
+	        in.close();
+	        
+	        totalStr += (id + "\n" + pwd + "\n" + "0\n");
+	        
+	        out = new FileWriter("account.txt");
+	        outputToFile = new PrintWriter(out);
+	        outputToFile.print(totalStr);
+	        out.close();
+    	}
+    	catch(IOException ex){
+    		ex.printStackTrace();
+    	}
+        
     }
 }
