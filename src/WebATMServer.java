@@ -133,20 +133,23 @@ class HandleAClient implements Runnable {
 							unableAccounts = unableAccountsAL.toArray(
 									new String[unableAccountsAL.size()]);
 							updateUnableAccounts();
-							loginFailTimes = 0;
 							System.out.println("Fail over 3 times! Lock.");
 						}
 					}
 					else{
-						createNewAccount(id, pwd);
-						
-						cash = 0;
-						outputToClient.println(String.valueOf(cash));
-						addHistory(id, String.valueOf(cash));
-						
-						System.out.println("Create new account!");
-						founded = true;
-						break;
+						if(loginFailTimes == 0){
+							createNewAccount(id, pwd);
+							
+							cash = 0;
+							outputToClient.println(String.valueOf(cash));
+							addHistory(id, String.valueOf(cash));
+							
+							System.out.println("Create new account!");
+							founded = true;
+							break;
+						}
+						else
+							outputToClient.println(String.valueOf(-1));
 					}
 				}	// end if(!founded)
 		    }	// end while(!founded)
